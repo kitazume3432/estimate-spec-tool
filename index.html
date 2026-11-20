@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>見積依頼用仕様書 作成ツール</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
+<style>
+:root{--cream:#F7F3EC;--paper:#FFFDF9;--wood:#AD8A5C;--wood-d:#8C6C42;--char:#232323;--line:#E2D9CB;--muted:#7A7166;--warn:#FFF2C2;--red:#B23A2E}
+*{box-sizing:border-box}
+body{margin:0;background:var(--cream);color:var(--char);font-family:"游ゴシック","Yu Gothic","YuGothic","Hiragino Sans",sans-serif;font-size:14px;line-height:1.6}
+header{background:var(--char);color:#fff;padding:18px 28px;display:flex;align-items:baseline;gap:16px;flex-wrap:wrap}
+header h1{margin:0;font-size:20px;font-weight:700;letter-spacing:.06em}
+header p{margin:0;color:#CFC5B5;font-size:12px}
+main{max-width:1100px;margin:0 auto;padding:24px 20px 80px}
+section{background:var(--paper);border:1px solid var(--line);border-radius:6px;padding:20px 22px;margin-bottom:18px}
+section h2{margin:0 0 14px;font-size:16px;display:flex;align-items:center;gap:10px}
+section h2 .no{color:var(--wood);font-size:22px;font-weight:700;font-family:Georgia,"Times New Roman",serif}
+.drop{border:2px dashed var(--wood);border-radius:6px;padding:28px;text-align:center;cursor:pointer;background:#FBF7F0}
+.drop.on{background:#F1E6D3}
+.drop b{color:var(--wood-d)}
+.hint{color:var(--muted);font-size:12px;margin:8px 0 0}
+.msg{margin-top:10px;font-size:13px}
+.msg.err{color:var(--red)}
+.meta{display:grid;grid-template-columns:1fr 200px;gap:12px;margin-bottom:14px}
+label.f{display:flex;flex-direction:column;font-size:12px;color:var(--muted);gap:4px}
+input,textarea,select{font:inherit;color:var(--char);border:1px solid var(--line);border-radius:4px;padding:6px 8px;background:#fff}
+input:focus,textarea:focus,select:focus,button:focus-visible{outline:2px solid var(--wood);outline-offset:1px}
+table{width:100%;border-collapse:collapse}
+th{font-size:12px;color:var(--muted);font-weight:600;text-align:left;padding:6px;border-bottom:1px solid var(--char)}
+td{padding:4px 6px;border-bottom:1px solid var(--line);vertical-align:top}
+tr.cat td{background:#EFE7DA;font-weight:700;padding:6px 8px}
+tr.need td{background:var(--warn)}
+td textarea{width:100%;resize:vertical;min-height:32px}
+td input{width:100%}
+td select{width:100%}
+.c-mv{width:82px;white-space:nowrap}.c-mv .mini{padding:2px 6px;margin-left:2px}.grip{cursor:grab;color:var(--wood);font-size:16px;padding:0 4px;user-select:none}tr.dragging{opacity:.4}tr.over-top td{box-shadow:inset 0 2px 0 var(--wood)}tr.over-bot td{box-shadow:inset 0 -2px 0 var(--wood)}select.pick{width:76px;flex:none}.spec{display:flex;gap:6px;align-items:flex-start}.spec textarea{flex:1}.c-cat{width:96px}.c-item{width:150px}.c-ven{width:150px}.c-x{width:40px}
+button{font:inherit;border:1px solid var(--char);background:var(--char);color:#fff;border-radius:4px;padding:8px 16px;cursor:pointer}
+button.sub{background:#fff;color:var(--char)}
+button.mini{padding:2px 8px;font-size:12px;background:#fff;color:var(--muted);border-color:var(--line)}
+button.big{background:var(--wood);border-color:var(--wood);font-size:16px;padding:12px 28px;font-weight:700}
+button.big:hover{background:var(--wood-d)}
+button:disabled{opacity:.4;cursor:default}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.legend{font-size:12px;color:var(--muted)}
+.legend span{display:inline-block;width:12px;height:12px;background:var(--warn);border:1px solid #E5D49A;vertical-align:-2px;margin-right:4px}
+details{background:var(--paper);border:1px solid var(--line);border-radius:6px;padding:14px 22px}
+summary{cursor:pointer;font-weight:700}
+.sets{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px;margin-top:14px}
+.sets textarea{width:100%;height:220px;font-size:13px}
+@media (max-width:700px){.meta{grid-template-columns:1fr}.c-cat{width:70px}.c-item{width:100px}}
+</style>
+</head>
+<body>
+<header><h1>見積依頼用仕様書 作成ツール</h1><p>図面PDFから仕様を読み取り、見積依頼の管理と見積表紙に使えるExcelを作ります</p></header>
+<main>
+<section>
+ <h2><span class="no">01</span>図面PDFを読み込む</h2>
+ <div class="drop" id="drop" tabindex="0" role="button"><b>図面PDFをここにドラッグ</b>、またはクリックして選択(複数可)</div>
+ <input type="file" id="file" accept="application/pdf" multiple hidden>
+ <p class="hint">関工務所のCADから出力した図面(配置図・平面図・立面図など)の文字を読み取ります。スキャンした図面は読み取れません。</p>
+ <div class="row" style="margin-top:8px"><button class="sub" id="blank">図面なしで作る</button></div>
+ <div class="msg" id="msg"></div>
+</section>
+<section id="s2" hidden>
+ <h2><span class="no">02</span>内容を確認・修正する</h2>
+ <div class="meta">
+  <label class="f">工事名(お客様名)<input id="title"></label>
+  <label class="f">日付<input type="date" id="date"></label>
+ </div>
+ <p class="legend"><span></span>仕様が空欄の行(図面に記載なし)。記入するか、不要なら削除してください。業者は欄をクリックすると一覧から選べます。順番は⠿をドラッグするか↑↓で入れ替えます。</p>
+ <table>
+  <thead><tr><th class="c-mv">順番</th><th class="c-cat">区分</th><th class="c-item">項目</th><th>仕様(お客様向けに印刷されます)</th><th class="c-ven">業者</th><th class="c-x"></th></tr></thead>
+  <tbody id="tb"></tbody>
+ </table>
+ <div class="row" style="margin-top:10px"><button class="sub" id="addrow">＋ 行を追加</button></div>
+</section>
+<section id="s3" hidden>
+ <h2><span class="no">03</span>Excelを保存する</h2>
+ <p style="margin:0 0 12px">保存したExcelで、依頼日・返却予定・受領日を入れて送付状況を管理します。印刷すると業者・日付は出ず、お客様用の仕様書(見積表紙)になります。</p>
+ <button class="big" id="save">Excelを保存</button>
+</section>
+<details id="settings">
+ <summary>設定(業者リスト・既定の業者など)</summary>
+ <p class="hint" id="setStatus"></p>
+ <div class="sets">
+  <label class="f">業者リスト(1行に1社)<textarea id="setVendors"></textarea></label>
+  <label class="f">項目ごとの業者(項目=業者)<textarea id="setItemVendor"></textarea></label>
+  <label class="f">図面になくても入れる項目(項目=仕様)<textarea id="setFixed"></textarea></label>
+  <label class="f">工事別の依頼先(工事=業者、印刷されない)<textarea id="setWorks"></textarea></label>
+  <label class="f">仕様の選択肢(項目=候補1／候補2)<textarea id="setChoices"></textarea></label>
+ </div>
+ <p class="hint">「床|多層フローリング=大和屋」のように「|」の後に言葉を入れると、仕様にその言葉を含むときだけその業者にします。</p>
+ <div class="row" style="margin-top:10px">
+  <button id="setShare">全員に反映</button><button class="sub" id="setSave">このパソコンだけで使う</button>
+  <button class="sub" id="setReset">初期設定に戻す</button><button class="mini" id="setToken">トークンの設定</button>
+  <span class="msg" id="setMsg"></span>
+ </div>
+ <p class="hint">「全員に反映」は管理者(北爪)用です。押すとGitHubに保存され、1〜2分後から全員のツールがこの設定で開きます。</p>
+</details>
+</main>
+<script>
+// ===== 解析・Excel生成(ブラウザ/Node共通) =====
+const CATS=['外部','内部','設備','その他'];
+const ITEM_CAT={
+ '屋根':'外部','外壁':'外部','サッシ':'外部','玄関ドア':'外部','勝手口ドア':'外部','破風':'外部','軒裏':'外部','樋':'外部','格子':'外部','バルコニー':'外部','タイルデッキ':'外部','ウッドデッキ':'外部','物干し金物（屋外）':'外部','ガレージシャッター':'外部','シャッター':'外部','庇':'外部','水切':'外部',
+ '建具':'内部','巾木':'内部','窓枠':'内部','床':'内部','断熱材':'内部','壁':'内部','天井':'内部','物干し金物（室内）':'内部','ロールスクリーン':'内部','階段':'内部','手摺':'内部','造作':'内部','収納':'内部',
+ 'キッチン':'設備','食器棚':'設備','ユニットバス':'設備','浴室':'設備','造作洗面台':'設備','洗面台':'設備','トイレ':'設備','トイレ手洗器':'設備','手洗器':'設備','衣類乾燥機':'設備','給湯機':'設備','太陽光':'設備','換気':'設備','床暖房':'設備',
+ '規模':'その他','基礎':'その他','構造':'その他','冷暖房機器':'その他','長期優良住宅':'その他','照明':'その他','長期保証':'その他'
+};
+const LABEL_ALIAS={'給湯器':'給湯機','ユニットバス':'ユニットバス','UB':'ユニットバス','洗面化粧台':'洗面台','サッシュ':'サッシ','窓':'サッシ','断熱':'断熱材','クロス':'壁'};
+const DEFAULT_SETTINGS={
+ ver:2,
+ vendors:['関工務所','カナイヤ','長岡タイル','高崎トーヨー','岩瀬産業','大和屋','永大産業','キャピタルウッズ','Ｄフォーム','ウッドワン','品田コンクリート','ＮＣＮ','諸田電気','不動工業','ホリグチ'],
+ itemVendor:{'屋根':'カナイヤ','サッシ':'高崎トーヨー','玄関ドア':'高崎トーヨー','ガレージシャッター':'高崎トーヨー','破風':'カナイヤ','樋':'カナイヤ','物干し金物（屋外）':'岩瀬産業','建具':'岩瀬産業','巾木':'岩瀬産業','窓枠':'岩瀬産業','床|多層フローリング':'大和屋','断熱材':'Ｄフォーム','物干し金物（室内）':'岩瀬産業','階段':'ウッドワン','ユニットバス':'岩瀬産業','造作洗面台':'岩瀬産業','洗面台':'岩瀬産業','トイレ':'岩瀬産業','トイレ手洗器':'岩瀬産業','給湯機':'岩瀬産業','冷暖房機器':'岩瀬産業','基礎':'品田コンクリート'},
+ fixedItems:[{item:'樋',spec:''},{item:'構造',spec:''},{item:'冷暖房機器',spec:'ＬＤＫ：エアコン（い）区分'},{item:'長期優良住宅',spec:'申請費含む'},{item:'照明',spec:'予算取り'},{item:'長期保証',spec:'最大60年長期延長保証／設備延長保証'}],
+ choices:{'構造':['在来工法3.5寸角','耐震構法ＳＥ構法']},
+ works:[{item:'電気工事',vendor:'諸田電気'},{item:'設備工事',vendor:'不動工業'},{item:'水切等',vendor:'カナイヤ'},{item:'仮設・足場',vendor:'キャピタルウッズ'},{item:'鉄筋',vendor:'ホリグチ'},{item:'外構',vendor:''},{item:'プレカット',vendor:''}]
+};
+const nz=s=>s.normalize('NFKC').replace(/\s+/g,' ').trim();
+const catOf=item=>{if(ITEM_CAT[item])return ITEM_CAT[item];for(const k in ITEM_CAT){if(item.startsWith(k))return ITEM_CAT[k];}
+ if(/トイレ|洗面|浴|キッチン|給湯/.test(item))return '設備';return 'その他';};
+function vendorOf(item,spec,st){const m=st.itemVendor;for(const k in m){const [i,kw]=k.split('|');if(i===item&&(!kw||spec.includes(kw)))return m[k];}
+ for(const k in m){const [i,kw]=k.split('|');if(!kw&&item.startsWith(i))return m[k];}return '';}
+function cleanSpec(s){return s.replace(/記載なき/g,'標準').replace(/\(/g,'（').replace(/\)/g,'）').replace(/:/g,'：').replace(/(\d)\*(\d)/g,'$1×$2').replace(/ +/g,'　').trim();}
+
+function parseLines(rawLines){
+ const L=rawLines.map(nz).filter(Boolean);
+ const out=[];const seen=new Set();
+ const add=(item,spec,note='')=>{spec=cleanSpec(spec);const key=item+'|'+spec;if(seen.has(key))return;seen.add(key);out.push({item,spec,note});};
+ const info={title:'',date:'',floors:new Set(),nobe:'',kenchiku:''};
+ const isStop=l=>/^■/.test(l)||/^No\.?$/.test(l)||/^工事名/.test(l)||/^図面名/.test(l)||/：|:/.test(l)&&!/^鏡[：:]/.test(l);
+ let gw=false,ih=false,h2400=false,used=new Set();
+ for(let i=0;i<L.length;i++){
+  const l=L[i];
+  // 工事名・日付
+  const ns=l.replace(/\s/g,'');
+  let m=ns.match(/関工務所(.+?(?:工事))/); if(m&&!info.title) info.title=m[1].replace(/邸(新築|建替|増築|改修|リフォーム)/,'邸　$1');
+  m=ns.match(/(20\d{2})\/(\d{1,2})\/(\d{1,2})/); if(m&&!info.date) info.date=`${m[1]}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`;
+  m=l.match(/^(\d)階\s*([\d.]+)/); if(m) info.floors.add(m[1]);
+  m=l.match(/延床面積\s*([\d.]+)\s*\(([\d.]+)\)/); if(m) info.nobe=`延床面積${m[1]}㎡（${m[2]}坪）`;
+  m=l.match(/建築面積\s*([\d.]+)\s*\(([\d.]+)\)/); if(m) info.kenchiku=`建築面積${m[1]}㎡（${m[2]}坪）`;
+  // ■ラベル
+  if(/^■/.test(l)){
+   let label=l.slice(1).trim(),first='';
+   const c=label.match(/^(.+?)[：:](.*)$/); if(c){label=c[1].trim();first=c[2].trim();}
+   const body=[];if(first)body.push(first);
+   let j=i+1;while(j<L.length&&!isStop(L[j])&&body.length<8){body.push(L[j]);used.add(j);j++;}
+   let spec=body.join(' ');
+   // ラベル解釈
+   let items=[];
+   const tm=label.match(/^トイレ\s*【(.+)】$/);
+   if(tm){const n=tm[1].split(/[・,、]/).length;items=[`トイレ（${tm[1]}）`];if(n>1)spec+=` ${n}台`;}
+   else if(/^トイレ\s*手洗/.test(label))items=['トイレ手洗器'];
+   else if(/基礎$/.test(label)&&!spec){items=['基礎'];spec=label;}
+   else if(label.includes('・')&&label.split('・').every(p=>ITEM_CAT[p]||LABEL_ALIAS[p]))items=label.split('・').map(p=>LABEL_ALIAS[p]||p);
+   else items=[LABEL_ALIAS[label]||label];
+   items.forEach(it=>add(it,spec));
+   continue;
+  }
+  if(used.has(i))continue;
+  // 項目：仕様
+  m=l.match(/^([^：:\s]{1,10})[：:](.+)$/);
+  if(m&&!/^鏡$/.test(m[1])&&!/図|^S$/.test(m[1])){const it=LABEL_ALIAS[m[1].trim()]||m[1].trim();
+   let sp=m[2].trim();if(it==='床'&&/^CF$/i.test(sp))sp='クッションフロア';add(it,sp);continue;}
+  // キーワード
+  if(/ジエスタ|グランデル|ヴェナート|エルムーブ|プロノーバ|コンコード|玄関ドア/.test(l)&&!/^■/.test(l)){
+   const body=[l];let j=i+1;while(j<L.length&&!isStop(L[j])&&body.length<4){body.push(L[j]);used.add(j);j++;}
+   add('玄関ドア',body.join(' '));continue;}
+  if(/ロールスクリーン/.test(l)){add('ロールスクリーン','あり（図面参照）');continue;}
+  if(/Pid4M|ランドリーポール|ホシ姫|室内物干/i.test(l)){const ex=out.find(o=>o.item==='物干し金物（室内）');
+   if(ex){if(!ex.spec.includes(l)){ex.spec+='　／　'+l;}}else add('物干し金物（室内）',l);continue;}
+  if(/ホスクリーン|物干し金物/.test(l)){if(/ホスクリーン/.test(l))add('物干し金物（屋外）',l);continue;}
+  if(/乾太くん/.test(l)){add('衣類乾燥機',l.replace(/^上部/,'').replace(/デラックス$/,'デラックスタイプ').replace(/乾太くん(\d)/,'乾太くん $1'));continue;}
+  if(/タイルデッキ/.test(l)){add('タイルデッキ',l.replace(/^タイルデッキ\s*/,'タイル'));continue;}
+  if(/ウッドデッキ/.test(l)){add('ウッドデッキ',l);continue;}
+  if(/GW充填|グラスウール充填/i.test(l))gw=true;
+  if(/^IH$/i.test(l))ih=true;
+  if(/^H2400$/.test(l)&&/PA型|^P[A-Z]型/.test(L[i-1]||''))h2400=true;
+ }
+ const f=(it)=>out.find(o=>o.item===it);
+ if(gw&&f('断熱材'))f('断熱材').spec+='（一部GW充填）';
+ if(ih&&f('キッチン'))f('キッチン').spec+='（IH）';
+ if(h2400&&f('建具')&&/H2000/.test(f('建具').spec))f('建具').spec+='（一部H2400）';
+ return {items:out,title:info.title,date:info.date,lineCount:L.length};
+}
+function buildRows(parsed,st){
+ const rows=parsed.items.map(o=>({cat:catOf(o.item),item:o.item,spec:o.spec,vendor:'',note:''}));
+ for(const fx of st.fixedItems){if(!rows.some(r=>r.item===fx.item))rows.push({cat:catOf(fx.item),item:fx.item,spec:fx.spec||'',vendor:'',note:''});}
+ rows.forEach(r=>{r.vendor=vendorOf(r.item,r.spec,st);if(!r.spec)r.note='図面記載なし・仕様を記入';});
+ const ord=Object.keys(ITEM_CAT);
+ const idx=r=>{let k=ord.indexOf(r.item);if(k<0)k=ord.findIndex(x=>r.item.startsWith(x));return k<0?999:k;};
+ rows.sort((a,b)=>CATS.indexOf(a.cat)-CATS.indexOf(b.cat)||idx(a)-idx(b));
+ return rows;
+}
+
+async function buildWorkbook(ExcelJS,d,st){
+ const FN='小塚ゴシック Pro R';
+ const wb=new ExcelJS.Workbook();
+ const dt=d.date?new Date(d.date+'T00:00:00'):new Date();
+ const sname=`${String(dt.getFullYear()).slice(2)}${String(dt.getMonth()+1).padStart(2,'0')}${String(dt.getDate()).padStart(2,'0')}`;
+ const ws=wb.addWorksheet(sname,{views:[{state:'frozen',ySplit:4}]});
+ const W={A:16.9,B:39.3,C:35.6,D:18,E:10,F:8,G:9,H:9,I:9,J:24};
+ ws.columns=Object.keys(W).map(k=>({key:k,width:W[k]}));
+ const f9={name:FN,size:9},gray={type:'pattern',pattern:'solid',fgColor:{argb:'FFF2F2F2'}};
+ const hair={style:'hair'},thin={style:'thin'};
+ ws.mergeCells('A1:C1');const a1=ws.getCell('A1');a1.value='仕　様　書';a1.font={name:FN,size:16};a1.alignment={horizontal:'center',vertical:'middle'};ws.getRow(1).height=36;
+ ws.mergeCells('A2:B2');const a2=ws.getCell('A2');a2.value=d.title||'';a2.font={name:FN,size:12};a2.alignment={vertical:'bottom'};ws.getRow(2).height=24;
+ const c2=ws.getCell('C2');c2.value=new Date(Date.UTC(dt.getFullYear(),dt.getMonth(),dt.getDate()));c2.numFmt='yyyy"年"m"月"d"日"';c2.font=f9;c2.alignment={horizontal:'right',vertical:'bottom'};
+ const c3=ws.getCell('C3');c3.value='株式会社　関工務所';c3.font=f9;c3.alignment={horizontal:'right',vertical:'bottom'};ws.getRow(3).height=18;
+ ws.getCell('D1').value='見積依頼の状況';ws.getCell('D1').font={name:FN,size:9};ws.getCell('D1').alignment={vertical:'middle'};
+ [['E1','未依頼'],['G1','回答待ち'],['I1','期限超過']].forEach(([c,v])=>{const x=ws.getCell(c);x.value=v;x.font=f9;x.alignment={horizontal:'right',vertical:'middle'};});
+ ws.getCell('D2').value='黄＝業者あり未依頼／赤＝返却予定超過／灰＝受領済';ws.getCell('D2').font={name:FN,size:8,color:{argb:'FF808080'}};ws.getCell('D2').alignment={vertical:'bottom'};
+ ws.mergeCells('B4:C4');ws.mergeCells('E4:F4');
+ Object.entries({A:'項目',B:'仕様',D:'業者',E:'状況',G:'依頼日',H:'返却予定',I:'受領日',J:'備考'}).forEach(([c,v])=>ws.getCell(c+'4').value=v);
+ ws.getRow(4).height=18;const hfill={type:'pattern',pattern:'solid',fgColor:{argb:'FFDDDDDD'}};
+ 'ABDEGHIJ'.split('').forEach(c=>{const x=ws.getCell(c+'4');x.font=f9;x.fill=hfill;x.alignment={horizontal:'center',vertical:'middle'};x.border={top:thin,bottom:thin};});
+ let r=5;const first=5;
+ const itemRow=(item,spec,vendor,note,printable)=>{
+  ws.getCell('A'+r).value=item;if(printable){ws.mergeCells(`B${r}:C${r}`);ws.getCell('B'+r).value=spec||null;}
+  if(vendor)ws.getCell('D'+r).value=vendor;if(note)ws.getCell('J'+r).value=note;ws.mergeCells(`E${r}:F${r}`);
+  'ABCDEGHIJ'.split('').filter(c=>!(printable&&c==='C')).forEach(c=>{const x=ws.getCell(c+r);x.font=c==='J'?{...f9,color:{argb:'FFC00000'}}:f9;
+   x.border={bottom:hair,...(c==='B'&&printable?{left:hair}:{})};x.alignment='ABJ'.includes(c)?{vertical:'middle',wrapText:true}:{horizontal:'center',vertical:'middle'};
+   if('GHI'.includes(c))x.numFmt='m/d';});
+  const len=(spec||'').length;ws.getRow(r).height=len>80?42:len>42?30:18;r++;};
+ for(const cat of CATS){const rs=d.rows.filter(x=>x.cat===cat);if(!rs.length)continue;
+  if(r>first)r++;
+  ws.getCell('A'+r).value=cat;ws.mergeCells(`B${r}:C${r}`);['A','B','C'].forEach(c=>{const x=ws.getCell(c+r);x.fill=gray;x.border={bottom:thin};x.font=f9;});ws.getRow(r).height=18;r++;
+  rs.forEach(x=>itemRow(x.item,x.spec,x.vendor,x.note,true));}
+ const lastPrint=r-1;r+=2;
+ ws.getCell('A'+r).value='工事別（仕様書には印刷されません）';ws.getCell('A'+r).font={name:FN,size:9};
+ 'ABCDEFGHIJ'.split('').forEach(c=>{const x=ws.getCell(c+r);x.fill=gray;x.border={bottom:thin};});r++;
+ (d.works||st.works).forEach(w=>itemRow(w.item,'',w.vendor,'',false));
+ const last=r-1;
+ const R=c=>`$${c}$5:$${c}$${last}`;
+ const fm=(c,f)=>{const x=ws.getCell(c);x.value={formula:f};x.font={name:FN,size:11,color:{argb:'FFC00000'}};x.alignment={horizontal:'left',vertical:'middle'};x.numFmt='0"件"';};
+ fm('F1',`COUNTIFS(${R('D')},"<>",${R('D')},"<>関工務所",${R('G')},"",${R('E')},"<>前回同様",${R('E')},"<>依頼不要")`);
+ fm('H1',`COUNTIFS(${R('G')},"<>",${R('I')},"")`);
+ fm('J1',`COUNTIFS(${R('G')},"<>",${R('I')},"",${R('H')},"<"&TODAY())`);
+ const fill=c=>({fill:{type:'pattern',pattern:'solid',bgColor:{argb:c}}});
+ ws.addConditionalFormatting({ref:`D5:J${last}`,rules:[
+  {type:'expression',formulae:['$I5<>""'],style:fill('FFD9D9D9'),priority:1,stopIfTrue:true},
+  {type:'expression',formulae:['AND($G5<>"",$H5<>"",$H5<TODAY())'],style:fill('FFF4B6B6'),priority:2,stopIfTrue:true},
+  {type:'expression',formulae:['AND($D5<>"",$D5<>"関工務所",$G5="",$E5<>"前回同様",$E5<>"依頼不要")'],style:fill('FFFFF2A8'),priority:3}]});
+ const ml=wb.addWorksheet('業者リスト');ml.getCell('A1').value='業者（追加はこの列の下へ）';ml.getCell('C1').value='状況';
+ st.vendors.forEach((v,i)=>ml.getCell('A'+(i+2)).value=v);['見積依頼済','前回同様','依頼不要'].forEach((v,i)=>ml.getCell('C'+(i+2)).value=v);
+ ml.getColumn('A').width=28;ml.getColumn('C').width=14;
+ ws.dataValidations.add(`D5:D${last}`,{type:'list',allowBlank:true,showErrorMessage:false,formulae:["'業者リスト'!$A$2:$A$80"]});
+ ws.dataValidations.add(`E5:E${last}`,{type:'list',allowBlank:true,showErrorMessage:false,formulae:["'業者リスト'!$C$2:$C$10"]});
+ ws.pageSetup={paperSize:9,orientation:'portrait',fitToPage:true,fitToWidth:1,fitToHeight:1,horizontalCentered:true,
+  margins:{left:0.8,right:0.6,top:0.6,bottom:0.6,header:0.3,footer:0.3},printArea:`A$1:C$${lastPrint}`};
+ return {wb,sname};
+}
+// ===== 画面 =====
+const KEY='estimateSpecSettings_v1';
+let ST=loadSettings();let ROWS=[];let SHARED=null;
+const TKEY='estimateSpecGhToken';
+const GH=(()=>{const h=location.hostname;if(h.endsWith('.github.io')){return {owner:h.split('.')[0],repo:location.pathname.split('/').filter(Boolean)[0]||'estimate-spec-tool'};}return {owner:'kitazume3432',repo:'estimate-spec-tool'};})();
+const SHARED_URL=location.hostname.endsWith('.github.io')?'settings.json':`https://${GH.owner}.github.io/${GH.repo}/settings.json`;
+async function loadShared(){try{const r=await fetch(SHARED_URL+'?t='+Date.now(),{cache:'no-store'});if(!r.ok)throw 0;const s=await r.json();if(!s.vendors)throw 0;
+ SHARED=s;ST=migrate(JSON.parse(JSON.stringify(s)));}catch(e){SHARED=null;}fillSettings();if(!$('s2').hidden)render();}
+function migrate(s){const D=DEFAULT_SETTINGS;if(!s.choices)s.choices=JSON.parse(JSON.stringify(D.choices));
+ s.fixedItems=(s.fixedItems||[]).map(x=>x.item==='長期優良住宅申請費'?{item:'長期優良住宅',spec:x.spec}:x);
+ for(const d of D.fixedItems){const x=s.fixedItems.find(y=>y.item===d.item);if(!x)s.fixedItems.push({...d});else if(!x.spec&&d.spec)x.spec=d.spec;}
+ if((s.ver||1)<2){const rm=['へんみ設備','川場電気','白沢設備','イソダコーポレーション'];
+  s.vendors=s.vendors.filter(v=>!rm.includes(v));if(!s.vendors.includes('関工務所'))s.vendors.unshift('関工務所');
+  if(!s.vendors.includes('Ｄフォーム')){const k=s.vendors.indexOf('キャピタルウッズ');s.vendors.splice(k<0?s.vendors.length:k+1,0,'Ｄフォーム');}
+  if(!s.itemVendor['断熱材']||s.itemVendor['断熱材']==='キャピタルウッズ')s.itemVendor['断熱材']='Ｄフォーム';
+  (s.works||[]).forEach(w=>{if(rm.includes(w.vendor))w.vendor='';});s.ver=2;}
+ return s;}
+function loadSettings(){try{const s=JSON.parse(localStorage.getItem(KEY)||'null');if(s&&s.vendors)return migrate(s);}catch(e){}return JSON.parse(JSON.stringify(DEFAULT_SETTINGS));}
+function $(id){return document.getElementById(id);}
+function esc(s){return String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+if(window.pdfjsLib)pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+async function readPdf(file){
+ const doc=await pdfjsLib.getDocument({data:new Uint8Array(await file.arrayBuffer())}).promise;const lines=[];
+ for(let p=1;p<=doc.numPages;p++){const tc=await (await doc.getPage(p)).getTextContent();let s='';
+  for(const it of tc.items){s+=it.str;if(it.hasEOL){lines.push(s);s='';}}if(s)lines.push(s);}
+ return lines;}
+async function handleFiles(files){
+ const msg=$('msg');msg.className='msg';msg.textContent='読み取り中…';
+ try{let lines=[];for(const f of files){if(!/pdf$/i.test(f.name)&&f.type!=='application/pdf')continue;lines=lines.concat(await readPdf(f));}
+  if(!lines.join('').trim()){msg.className='msg err';msg.textContent='文字を読み取れませんでした。スキャンした図面の場合は「図面なしで作る」から手入力してください。';return;}
+  const p=parseLines(lines);ROWS=buildRows(p,ST);
+  $('title').value=p.title;$('date').value=p.date||today();
+  const n=ROWS.filter(r=>r.spec).length;
+  msg.textContent=`${files.length}件の図面から ${n} 項目を読み取りました。02で内容を確認してください。`;
+  show();}catch(e){msg.className='msg err';msg.textContent='読み取りに失敗しました：'+e.message;}}
+function today(){const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
+function show(){$('s2').hidden=false;$('s3').hidden=false;render();$('s2').scrollIntoView({behavior:'smooth'});}
+function render(){
+ const tb=$('tb');let h='';const dl='<datalist id="vlist">'+ST.vendors.map(v=>`<option value="${esc(v)}">`).join('')+'</datalist>';
+ ROWS.forEach((r,i)=>{r._i=i;});
+ for(const cat of CATS){const rs=ROWS.filter(r=>r.cat===cat);
+  h+=`<tr class="cat" data-cat="${cat}"><td colspan="5">${cat}</td><td><button class="mini" data-add="${cat}" title="${cat}に行を追加">＋</button></td></tr>`;
+  rs.forEach((r,k)=>{const ch=(ST.choices||{})[r.item];
+   const sel=ch&&ch.length?`<select class="pick" data-pick="${r._i}" title="候補から選ぶ"><option value="">候補</option>${ch.map(c=>`<option>${esc(c)}</option>`).join('')}</select>`:'';
+   h+=`<tr class="${r.spec?'':'need'}" data-i="${r._i}">
+   <td class="c-mv"><span class="grip" draggable="true" title="ドラッグして移動">⠿</span><button class="mini" data-up="${r._i}" title="上へ"${k?'':' disabled'}>↑</button><button class="mini" data-dn="${r._i}" title="下へ"${k<rs.length-1?'':' disabled'}>↓</button></td>
+   <td><select data-k="cat">${CATS.map(c=>`<option${c===r.cat?' selected':''}>${c}</option>`).join('')}</select></td>
+   <td><input data-k="item" value="${esc(r.item)}"></td>
+   <td><div class="spec">${sel}<textarea data-k="spec" rows="${Math.max(1,Math.ceil(r.spec.length/30))}">${esc(r.spec)}</textarea></div></td>
+   <td><input data-k="vendor" list="vlist" value="${esc(r.vendor)}"></td>
+   <td><button class="mini" data-del="${r._i}" title="この行を削除">×</button></td></tr>`;});}
+ tb.innerHTML=h;if(!$('vlist'))document.body.insertAdjacentHTML('beforeend',dl);else $('vlist').outerHTML=dl;}
+function moveRow(from,toIdx,cat){const r=ROWS.splice(from,1)[0];if(cat)r.cat=cat;if(toIdx>from)toIdx--;ROWS.splice(toIdx,0,r);render();}
+function sibling(i,dir){const r=ROWS[i];let j=i+dir;while(j>=0&&j<ROWS.length&&ROWS[j].cat!==r.cat)j+=dir;return (j>=0&&j<ROWS.length)?j:-1;}
+let dragI=null;
+$('tb').addEventListener('dragstart',e=>{const tr=e.target.closest('tr[data-i]');if(!tr)return;dragI=+tr.dataset.i;tr.classList.add('dragging');e.dataTransfer.effectAllowed='move';e.dataTransfer.setData('text/plain',String(dragI));});
+$('tb').addEventListener('dragend',()=>{dragI=null;document.querySelectorAll('.dragging,.over-top,.over-bot').forEach(x=>x.classList.remove('dragging','over-top','over-bot'));});
+$('tb').addEventListener('dragover',e=>{if(dragI===null)return;const tr=e.target.closest('tr');if(!tr)return;e.preventDefault();
+ document.querySelectorAll('.over-top,.over-bot').forEach(x=>x.classList.remove('over-top','over-bot'));
+ if(tr.classList.contains('cat')){tr.classList.add('over-bot');return;}
+ const rc=tr.getBoundingClientRect();tr.classList.add(e.clientY<rc.top+rc.height/2?'over-top':'over-bot');});
+$('tb').addEventListener('drop',e=>{if(dragI===null)return;e.preventDefault();const tr=e.target.closest('tr');if(!tr)return;
+ if(tr.classList.contains('cat')){const cat=tr.dataset.cat;const first=ROWS.findIndex(r=>r.cat===cat);moveRow(dragI,first<0?ROWS.length:first,cat);}
+ else{const t=+tr.dataset.i;const rc=tr.getBoundingClientRect();const after=e.clientY>=rc.top+rc.height/2;moveRow(dragI,after?t+1:t,ROWS[t].cat);}
+ dragI=null;});
+$('tb').addEventListener('input',e=>{const k=e.target.dataset.k;if(!k)return;const tr=e.target.closest('tr');const r=ROWS[+tr.dataset.i];r[k]=e.target.value;
+ if(k==='spec'){tr.classList.toggle('need',!r.spec);if(r.spec)r.note='';else r.note='図面記載なし・仕様を記入';}});
+$('tb').addEventListener('change',e=>{const d=e.target.dataset;
+ if(d.k==='cat'){const r=ROWS[+e.target.closest('tr').dataset.i];const rest=ROWS.filter(x=>x!==r);let k=-1;rest.forEach((x,j)=>{if(x.cat===r.cat)k=j;});rest.splice(k<0?rest.length:k+1,0,r);ROWS=rest;render();}
+ if(d.k==='item')render();
+ if(d.pick!==undefined&&e.target.value){const r=ROWS[+d.pick];r.spec=e.target.value;r.note='';render();}});
+$('tb').addEventListener('click',e=>{const d=e.target.dataset;
+ if(d.del!==undefined){ROWS.splice(+d.del,1);render();}
+ if(d.up!==undefined){const i=+d.up,j=sibling(i,-1);if(j>=0){[ROWS[i],ROWS[j]]=[ROWS[j],ROWS[i]];render();}}
+ if(d.dn!==undefined){const i=+d.dn,j=sibling(i,1);if(j>=0){[ROWS[i],ROWS[j]]=[ROWS[j],ROWS[i]];render();}}
+ if(d.add){let k=-1;ROWS.forEach((x,j)=>{if(x.cat===d.add)k=j;});ROWS.splice(k<0?ROWS.length:k+1,0,{cat:d.add,item:'',spec:'',vendor:'',note:'図面記載なし・仕様を記入'});render();}});
+$('addrow').onclick=()=>{ROWS.push({cat:'その他',item:'',spec:'',vendor:'',note:'図面記載なし・仕様を記入'});render();};
+const drop=$('drop');
+drop.onclick=()=>$('file').click();drop.onkeydown=e=>{if(e.key==='Enter'||e.key===' ')$('file').click();};
+$('file').onchange=e=>{if(e.target.files.length)handleFiles([...e.target.files]);e.target.value='';};
+['dragover','dragenter'].forEach(t=>drop.addEventListener(t,e=>{e.preventDefault();drop.classList.add('on');}));
+['dragleave','drop'].forEach(t=>drop.addEventListener(t,e=>{e.preventDefault();drop.classList.remove('on');}));
+drop.addEventListener('drop',e=>{if(e.dataTransfer.files.length)handleFiles([...e.dataTransfer.files]);});
+$('blank').onclick=()=>{ROWS=buildRows({items:[]},ST);$('title').value='';$('date').value=today();$('msg').className='msg';$('msg').textContent='';show();};
+$('save').onclick=async()=>{
+ const rows=ROWS.filter(r=>r.item.trim()).map(r=>({...r,item:r.item.trim(),note:r.spec.trim()?'':'図面記載なし・仕様を記入'}));
+ const title=$('title').value.trim();
+ const {wb,sname}=await buildWorkbook(ExcelJS,{title,date:$('date').value,rows},ST);
+ const buf=await wb.xlsx.writeBuffer();const blob=new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+ const nm=(title.replace(/邸.*$/,'邸').replace(/[\\/:*?"<>|\s]/g,'')||'無題');
+ const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`見積依頼用仕様書_${nm}_${sname}.xlsx`;document.body.appendChild(a);a.click();
+ setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},1000);};
+// 設定
+function fillSettings(){
+ $('setVendors').value=ST.vendors.join('\n');
+ $('setItemVendor').value=Object.entries(ST.itemVendor).map(([k,v])=>k+'='+v).join('\n');
+ $('setFixed').value=ST.fixedItems.map(x=>x.item+'='+(x.spec||'')).join('\n');
+ $('setWorks').value=ST.works.map(x=>x.item+'='+(x.vendor||'')).join('\n');
+ $('setChoices').value=Object.entries(ST.choices||{}).map(([k,v])=>k+'='+v.join('／')).join('\n');status();}
+function kv(t){return t.split('\n').map(s=>s.trim()).filter(Boolean).map(s=>{const i=s.indexOf('=');return i<0?[s,'']:[s.slice(0,i).trim(),s.slice(i+1).trim()];});}
+function setMsg(t,keep){$('setMsg').textContent=t;if(!keep)setTimeout(()=>$('setMsg').textContent='',4000);}
+function persist(){try{localStorage.setItem(KEY,JSON.stringify(ST));return true;}catch(e){return false;}}
+function readPanel(){return {ver:2,vendors:$('setVendors').value.split('\n').map(s=>s.trim()).filter(Boolean),
+ itemVendor:Object.fromEntries(kv($('setItemVendor').value)),
+ fixedItems:kv($('setFixed').value).map(([item,spec])=>({item,spec})),
+ works:kv($('setWorks').value).map(([item,vendor])=>({item,vendor})),
+ choices:Object.fromEntries(kv($('setChoices').value).map(([k,v])=>[k,v.split('／').map(x=>x.trim()).filter(Boolean)]))};}
+function status(){const s=$('setStatus');
+ s.textContent=SHARED?`全員共通の設定を使っています(最終更新 ${SHARED.updatedAt?new Date(SHARED.updatedAt).toLocaleString('ja-JP'):'—'})。ここで変えた内容は「全員に反映」を押すまで、この画面だけの変更です。`
+  :'このパソコンの設定を使っています(全員共通の設定はまだありません)。';}
+$('setSave').onclick=()=>{ST=readPanel();setMsg(persist()?'このパソコンに保存しました'+(SHARED?'(全員共通の設定がある間は、次に開いたとき共通の設定に戻ります)':''):'保存できませんでした');if(!$('s2').hidden)render();};
+function getToken(force){let t=localStorage.getItem(TKEY);if(!t||force){t=prompt('GitHubのトークン(github_pat_ で始まるもの)を貼り付けてください。このパソコンに保存され、次回からは聞かれません。',t||'');if(!t)return null;t=t.trim();localStorage.setItem(TKEY,t);}return t;}
+$('setToken').onclick=()=>{if(getToken(true))setMsg('トークンを保存しました');};
+const b64=s=>btoa(unescape(encodeURIComponent(s)));
+$('setShare').onclick=async()=>{const tok=getToken(false);if(!tok)return;
+ const btn=$('setShare');btn.disabled=true;setMsg('保存中…',true);
+ try{const data={...readPanel(),updatedAt:new Date().toISOString()};
+  const api=`https://api.github.com/repos/${GH.owner}/${GH.repo}/contents/settings.json`;
+  const hd={Authorization:'Bearer '+tok,Accept:'application/vnd.github+json'};
+  let sha;const g=await fetch(api+'?ref=main&t='+Date.now(),{headers:hd,cache:'no-store'});
+  if(g.status===401){localStorage.removeItem(TKEY);throw new Error('トークンが正しくありません。「トークンの設定」から入れ直してください');}
+  if(g.ok)sha=(await g.json()).sha;else if(g.status!==404)throw new Error(g.status===403?'このトークンに estimate-spec-tool への書き込み権限がありません':'読み込みエラー '+g.status);
+  const p=await fetch(api,{method:'PUT',headers:{...hd,'Content-Type':'application/json'},body:JSON.stringify({message:'設定を更新',content:b64(JSON.stringify(data,null,1)),branch:'main',...(sha?{sha}:{})})});
+  if(!p.ok){if(p.status===401)localStorage.removeItem(TKEY);throw new Error(p.status===403||p.status===404?'このトークンに estimate-spec-tool への書き込み権限がありません':'保存エラー '+p.status);}
+  SHARED=data;ST=migrate(JSON.parse(JSON.stringify(data)));persist();status();setMsg('全員に反映しました。1〜2分後から全員のツールに反映されます');if(!$('s2').hidden)render();
+ }catch(e){setMsg(e.message,true);}finally{btn.disabled=false;}};
+$('setReset').onclick=()=>{if(!confirm('画面の設定を初期設定に戻しますか?(全員に反映するには、このあと「全員に反映」を押します)'))return;ST=JSON.parse(JSON.stringify(DEFAULT_SETTINGS));fillSettings();if(!$('s2').hidden)render();setMsg('初期設定に戻しました');};
+fillSettings();loadShared();
+</script>
+</body>
+</html>
