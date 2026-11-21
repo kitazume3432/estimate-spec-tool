@@ -1,9 +1,14 @@
 ============================================== 
-Update started: —ß˜a8”N11ŒŽ20“ú ‹à 20:07:00.33 
+Update started: —ß˜a8”N11ŒŽ21“ú “y  9:59:58.66 
 Folder: Z:\estimate-spec-tool 
 ============================================== 
-User chose not to overwrite index.html. 
+Overwrote index.html with: index - 2026-11-21T095942.897.html 
  
 --- git pull --- 
-Your configuration specifies to merge with the ref 'refs/heads/main'
-from the remote, but no such ref was fetched.
+From https://github.com/kitazume3432/estimate-spec-tool
+   8ea22e9..0428def  main       -> origin/main
+Updating 8ea22e9..0428def
+Fast-forward
+ settings.json | 107 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 107 insertions(+)
+ create mode 100644 settings.json

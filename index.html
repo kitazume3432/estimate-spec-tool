@@ -78,7 +78,7 @@ summary{cursor:pointer;font-weight:700}
 </section>
 <section id="s3" hidden>
  <h2><span class="no">03</span>Excelを保存する</h2>
- <p style="margin:0 0 12px">保存したExcelで、依頼日・返却予定・受領日を入れて送付状況を管理します。印刷すると業者・日付は出ず、お客様用の仕様書(見積表紙)になります。</p>
+ <p style="margin:0 0 12px">Excelには2つのシートがあります。「仕様書」はお客様用の横向きの仕様書(見積表紙)で、業者・日付は載りません。「見積依頼管理」で依頼日・返却予定・受領日を入れて送付状況を管理します。管理シートで仕様を直すと、仕様書シートにも反映されます。</p>
  <button class="big" id="save">Excelを保存</button>
 </section>
 <details id="settings">
@@ -200,12 +200,15 @@ async function buildWorkbook(ExcelJS,d,st){
  const wb=new ExcelJS.Workbook();
  const dt=d.date?new Date(d.date+'T00:00:00'):new Date();
  const sname=`${String(dt.getFullYear()).slice(2)}${String(dt.getMonth()+1).padStart(2,'0')}${String(dt.getDate()).padStart(2,'0')}`;
- const ws=wb.addWorksheet(sname,{views:[{state:'frozen',ySplit:4}]});
+ const cv=wb.addWorksheet('仕様書',{views:[{showGridLines:false}]});
+ const MS='見積依頼管理';
+ const ws=wb.addWorksheet(MS,{views:[{state:'frozen',ySplit:4}]});
+ const refs=[];
  const W={A:16.9,B:39.3,C:35.6,D:18,E:10,F:8,G:9,H:9,I:9,J:24};
  ws.columns=Object.keys(W).map(k=>({key:k,width:W[k]}));
  const f9={name:FN,size:9},gray={type:'pattern',pattern:'solid',fgColor:{argb:'FFF2F2F2'}};
  const hair={style:'hair'},thin={style:'thin'};
- ws.mergeCells('A1:C1');const a1=ws.getCell('A1');a1.value='仕　様　書';a1.font={name:FN,size:16};a1.alignment={horizontal:'center',vertical:'middle'};ws.getRow(1).height=36;
+ ws.mergeCells('A1:C1');const a1=ws.getCell('A1');a1.value='見積依頼管理';a1.font={name:FN,size:16};a1.alignment={horizontal:'center',vertical:'middle'};ws.getRow(1).height=36;
  ws.mergeCells('A2:B2');const a2=ws.getCell('A2');a2.value=d.title||'';a2.font={name:FN,size:12};a2.alignment={vertical:'bottom'};ws.getRow(2).height=24;
  const c2=ws.getCell('C2');c2.value=new Date(Date.UTC(dt.getFullYear(),dt.getMonth(),dt.getDate()));c2.numFmt='yyyy"年"m"月"d"日"';c2.font=f9;c2.alignment={horizontal:'right',vertical:'bottom'};
  const c3=ws.getCell('C3');c3.value='株式会社　関工務所';c3.font=f9;c3.alignment={horizontal:'right',vertical:'bottom'};ws.getRow(3).height=18;
@@ -227,9 +230,9 @@ async function buildWorkbook(ExcelJS,d,st){
  for(const cat of CATS){const rs=d.rows.filter(x=>x.cat===cat);if(!rs.length)continue;
   if(r>first)r++;
   ws.getCell('A'+r).value=cat;ws.mergeCells(`B${r}:C${r}`);['A','B','C'].forEach(c=>{const x=ws.getCell(c+r);x.fill=gray;x.border={bottom:thin};x.font=f9;});ws.getRow(r).height=18;r++;
-  rs.forEach(x=>itemRow(x.item,x.spec,x.vendor,x.note,true));}
+  rs.forEach(x=>{refs.push({cat,item:x.item,spec:x.spec||'',row:r});itemRow(x.item,x.spec,x.vendor,x.note,true);});}
  const lastPrint=r-1;r+=2;
- ws.getCell('A'+r).value='工事別（仕様書には印刷されません）';ws.getCell('A'+r).font={name:FN,size:9};
+ ws.getCell('A'+r).value='工事別（仕様書には載りません）';ws.getCell('A'+r).font={name:FN,size:9};
  'ABCDEFGHIJ'.split('').forEach(c=>{const x=ws.getCell(c+r);x.fill=gray;x.border={bottom:thin};});r++;
  (d.works||st.works).forEach(w=>itemRow(w.item,'',w.vendor,'',false));
  const last=r-1;
@@ -248,9 +251,83 @@ async function buildWorkbook(ExcelJS,d,st){
  ml.getColumn('A').width=28;ml.getColumn('C').width=14;
  ws.dataValidations.add(`D5:D${last}`,{type:'list',allowBlank:true,showErrorMessage:false,formulae:["'業者リスト'!$A$2:$A$80"]});
  ws.dataValidations.add(`E5:E${last}`,{type:'list',allowBlank:true,showErrorMessage:false,formulae:["'業者リスト'!$C$2:$C$10"]});
- ws.pageSetup={paperSize:9,orientation:'portrait',fitToPage:true,fitToWidth:1,fitToHeight:1,horizontalCentered:true,
-  margins:{left:0.8,right:0.6,top:0.6,bottom:0.6,header:0.3,footer:0.3},printArea:`A$1:C$${lastPrint}`};
+ ws.pageSetup={paperSize:9,orientation:'landscape',fitToPage:true,fitToWidth:1,fitToHeight:0,
+  margins:{left:0.5,right:0.5,top:0.6,bottom:0.6,header:0.3,footer:0.3}};
+ buildCover(cv,d,dt,refs,MS,FN);
+ wb.calcProperties={fullCalcOnLoad:true};
  return {wb,sname};
+}
+
+// ===== お客様用 仕様書(横・4列) =====
+function textWeight(t){let w=0;for(const ch of String(t||'')){w+=/[\x20-\x7e\uff61-\uff9f]/.test(ch)?0.55:1;}return w;}
+function wrapLines(t,per){// 空白で折り返す前提で行数を見積もる
+ const words=String(t||'').replace(/　/g,' ').split(' ').filter(Boolean);if(!words.length)return 1;
+ let lines=1,cur=0;for(const w of words){const ww=textWeight(w);const add=cur?ww+0.55:ww;
+  if(cur+add<=per){cur+=add;}else if(ww<=per){lines++;cur=ww;}else{if(cur)lines++;lines+=Math.ceil(ww/per)-1;cur=ww%per||per;}}
+ return lines;}
+function buildCover(cv,d,dt,refs,MS,FN){
+ const WOOD='FFAD8A5C',DARK='FF2B2621',MUTED='FF8A7F72',CREAM='FFF7F4EF',SEP='FFE2D8C8';
+ const LW=15.5,VW=26.5,GW=3,PW=1.6,VCH=13.5,LCH=7,U=6,TL=13.5;
+ const cats=CATS.filter(c=>refs.some(x=>x.cat===c));
+ const cols=[];cats.forEach((c,g)=>{cols.push({width:PW},{width:LW},{width:VW},{width:PW});if(g<cats.length-1)cols.push({width:GW});});
+ cv.columns=cols;
+ const colP=g=>1+g*5,colL=g=>2+g*5,colV=g=>3+g*5,colQ=g=>4+g*5,lastCol=colQ(cats.length-1);
+ const card=g=>[colP(g),colL(g),colV(g),colQ(g)];
+ const f=(sz,c)=>({name:FN,size:sz,color:{argb:c}});
+ const fill=c=>({type:'pattern',pattern:'solid',fgColor:{argb:c}});
+ const band=(r,h,c)=>{cv.getRow(r).height=h;for(let i=1;i<=lastCol;i++)cv.getCell(r,i).fill=fill(c);};
+ // 上の帯
+ band(1,7,DARK);cv.getRow(2).height=3;for(let i=1;i<=lastCol;i++)cv.getCell(2,i).fill=fill(WOOD);
+ cv.getRow(3).height=22;
+ cv.getRow(4).height=16;const en=cv.getCell(4,1);en.value='S P E C I F I C A T I O N S';en.font=f(9,WOOD);en.alignment={vertical:'bottom'};
+ cv.getRow(5).height=40;const t=cv.getCell(5,1);t.value='仕 様 書';t.font=f(28,DARK);t.alignment={vertical:'bottom'};
+ cv.getRow(6).height=10;
+ cv.getRow(7).height=28;const n=cv.getCell(7,1);n.value=d.title||'';n.font=f(15,DARK);n.alignment={vertical:'bottom'};
+ const nameEnd=Math.min(lastCol,8);for(let i=1;i<=nameEnd;i++)cv.getCell(7,i).border={bottom:{style:'thin',color:{argb:WOOD}}};
+ // 右:日付・社名
+ const RL=cv.getColumn(colL(cats.length-1)).letter,RQ=cv.getColumn(lastCol).letter;[4,5,6].forEach(r=>cv.mergeCells(`${RL}${r}:${RQ}${r}`));
+ const dc=cv.getCell(4,colL(cats.length-1));dc.value=new Date(Date.UTC(dt.getFullYear(),dt.getMonth(),dt.getDate()));dc.numFmt='yyyy"年"m"月"d"日"';dc.font=f(10,DARK);dc.alignment={horizontal:'right',vertical:'bottom'};
+ const co=cv.getCell(5,colL(cats.length-1));co.value='株式会社　関工務所';co.font=f(15,DARK);co.alignment={horizontal:'right',vertical:'bottom'};
+ const br=cv.getCell(6,colL(cats.length-1));br.value='SEKI DESIGN ARCHITECT';br.font=f(8,WOOD);br.alignment={horizontal:'right',vertical:'top'};cv.getRow(6).height=14;
+ cv.getRow(8).height=22;
+ const HR=9;cv.getRow(HR).height=26;
+ const groups=cats.map(cat=>refs.filter(x=>x.cat===cat).map(x=>({...x,lines:Math.max(wrapLines(x.spec,VCH),Math.ceil(textWeight(x.item)/LCH))})));
+ const content=groups.map(g=>g.reduce((a,x)=>a+x.lines*TL,0));
+ const AVAIL=440;
+ const tallest=groups.reduce((bi,g,i)=>content[i]+g.length*10>content[bi]+groups[bi].length*10?i:bi,0);
+ let pad=10;const room=AVAIL-content[tallest]-groups[tallest].length*pad;
+ if(room>0)pad=Math.min(26,pad+room/groups[tallest].length);
+ const ends=[];
+ cats.forEach((cat,g)=>{
+  const L=colL(g),V=colV(g);
+  const h=cv.getCell(HR,L);h.value=cat;h.font=f(12,'FFFFFFFF');h.alignment={vertical:'middle'};
+  card(g).forEach(c=>cv.getCell(HR,c).fill=fill(WOOD));
+  let r=HR+1;
+  groups[g].forEach((x,k0)=>{
+   const k=Math.max(2,Math.ceil((x.lines*TL+pad)/U));const r2=r+k-1;
+   cv.mergeCells(r,L,r2,L);cv.mergeCells(r,V,r2,V);
+   const lc=cv.getCell(r,L),vc=cv.getCell(r,V);
+   lc.value={formula:`'${MS}'!A${x.row}`,result:x.item};
+   vc.value={formula:`SUBSTITUTE(IF('${MS}'!B${x.row}="","",'${MS}'!B${x.row}),"　"," ")`,result:x.spec.replace(/　/g,' ')};
+   lc.font=f(9,WOOD);vc.font=f(10,DARK);
+   lc.alignment={vertical:'middle',wrapText:true};vc.alignment={vertical:'middle',wrapText:true};
+   lc.fill=fill(CREAM);vc.fill=fill(CREAM);
+   for(let rr=r;rr<=r2;rr++){cv.getCell(rr,colP(g)).fill=fill(CREAM);cv.getCell(rr,colQ(g)).fill=fill(CREAM);}
+   if(k0>0){const top={top:{style:'thin',color:{argb:SEP}}};lc.border=top;vc.border=top;}
+   r=r2+1;});
+  ends.push(r);});
+ const maxRow=Math.max(...ends)+1;
+ // カードの下端をそろえる
+ cats.forEach((cat,g)=>{for(let r=ends[g];r<=maxRow;r++)for(const c of card(g)){cv.getCell(r,c).fill=fill(CREAM);if(r===ends[g]&&c!==colP(g)&&c!==colQ(g))cv.getCell(r,c).border={top:{style:'thin',color:{argb:SEP}}};}});
+ for(let i=HR+1;i<=maxRow;i++)cv.getRow(i).height=U;
+ // 下:会社情報
+ let fr=maxRow+1;cv.getRow(fr).height=18;fr++;
+ cv.getRow(fr).height=18;for(let i=1;i<=lastCol;i++)cv.getCell(fr,i).border={top:{style:'thin',color:{argb:WOOD}}};
+ const ad=cv.getCell(fr,1);ad.value='本社　群馬県利根郡川場村谷地1950　TEL 0278-52-2239　　｜　　高崎営業所　群馬県高崎市新保町271-1　TEL 027-386-3432';ad.font=f(8.5,MUTED);ad.alignment={vertical:'middle'};
+ cv.mergeCells(`${RL}${fr}:${RQ}${fr}`);const nm=cv.getCell(fr,colL(cats.length-1));nm.value='株式会社　関工務所';nm.font=f(9,DARK);nm.alignment={horizontal:'right',vertical:'middle'};
+ fr++;cv.getRow(fr).height=6;fr++;band(fr,7,DARK);
+ cv.pageSetup={paperSize:9,orientation:'landscape',fitToPage:true,fitToWidth:1,fitToHeight:1,horizontalCentered:true,verticalCentered:true,
+  margins:{left:0.4,right:0.4,top:0.35,bottom:0.35,header:0.2,footer:0.2},printArea:`A$1:${cv.getColumn(lastCol).letter}$${fr}`};
 }
 // ===== 画面 =====
 const KEY='estimateSpecSettings_v1';
