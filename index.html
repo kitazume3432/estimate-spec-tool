@@ -104,9 +104,9 @@ summary{cursor:pointer;font-weight:700}
 // ===== 解析・Excel生成(ブラウザ/Node共通) =====
 const CATS=['外部','内部','設備','その他'];
 const ITEM_CAT={
- '屋根':'外部','外壁':'外部','サッシ':'外部','玄関ドア':'外部','勝手口ドア':'外部','破風':'外部','軒裏':'外部','樋':'外部','格子':'外部','バルコニー':'外部','タイルデッキ':'外部','ウッドデッキ':'外部','物干し金物（屋外）':'外部','ガレージシャッター':'外部','シャッター':'外部','庇':'外部','水切':'外部',
- '建具':'内部','巾木':'内部','窓枠':'内部','床':'内部','断熱材':'内部','壁':'内部','天井':'内部','物干し金物（室内）':'内部','ロールスクリーン':'内部','階段':'内部','手摺':'内部','造作':'内部','収納':'内部',
- 'キッチン':'設備','食器棚':'設備','ユニットバス':'設備','浴室':'設備','造作洗面台':'設備','洗面台':'設備','トイレ':'設備','トイレ手洗器':'設備','手洗器':'設備','衣類乾燥機':'設備','給湯機':'設備','太陽光':'設備','換気':'設備','床暖房':'設備',
+ '屋根':'外部','外壁':'外部','サッシ':'外部','玄関ドア':'外部','勝手口ドア':'外部','破風':'外部','軒裏':'外部','樋':'外部','格子':'外部','バルコニー':'外部','タイルデッキ':'外部','ウッドデッキ':'外部','デッキ':'外部','土留め':'外部','物干し金物（屋外）':'外部','ガレージシャッター':'外部','シャッター':'外部','庇':'外部','水切':'外部',
+ '建具':'内部','巾木':'内部','窓枠':'内部','床':'内部','断熱材':'内部','壁':'内部','内壁':'内部','天井':'内部','物干し金物（室内）':'内部','ロールスクリーン':'内部','階段':'内部','手摺':'内部','造作':'内部','収納':'内部',
+ 'キッチン':'設備','食器棚':'設備','カップボード':'設備','ユニットバス':'設備','浴室':'設備','造作洗面台':'設備','洗面台':'設備','トイレ':'設備','トイレ手洗器':'設備','手洗器':'設備','衣類乾燥機':'設備','給湯機':'設備','太陽光':'設備','換気':'設備','床暖房':'設備',
  '規模':'その他','基礎':'その他','構造':'その他','冷暖房機器':'その他','長期優良住宅':'その他','照明':'その他','長期保証':'その他'
 };
 const LABEL_ALIAS={'給湯器':'給湯機','ユニットバス':'ユニットバス','UB':'ユニットバス','洗面化粧台':'洗面台','サッシュ':'サッシ','窓':'サッシ','断熱':'断熱材','クロス':'壁'};
@@ -118,7 +118,7 @@ const DEFAULT_SETTINGS={
  choices:{'構造':['在来工法3.5寸角','耐震構法ＳＥ構法']},
  works:[{item:'電気工事',vendor:'諸田電気'},{item:'設備工事',vendor:'不動工業'},{item:'水切等',vendor:'カナイヤ'},{item:'仮設・足場',vendor:'キャピタルウッズ'},{item:'鉄筋',vendor:'ホリグチ'},{item:'外構',vendor:''},{item:'プレカット',vendor:''}]
 };
-const nz=s=>s.normalize('NFKC').replace(/\s+/g,' ').trim();
+const nz=s=>s.replace(/\u3EFF/g,'S').normalize('NFKC').replace(/\s+/g,' ').trim();
 const catOf=item=>{if(ITEM_CAT[item])return ITEM_CAT[item];for(const k in ITEM_CAT){if(item.startsWith(k))return ITEM_CAT[k];}
  if(/トイレ|洗面|浴|キッチン|給湯/.test(item))return '設備';return 'その他';};
 function vendorOf(item,spec,st){const m=st.itemVendor;for(const k in m){const [i,kw]=k.split('|');if(i===item&&(!kw||spec.includes(kw)))return m[k];}
@@ -126,7 +126,8 @@ function vendorOf(item,spec,st){const m=st.itemVendor;for(const k in m){const [i
 function cleanSpec(s){return s.replace(/記載なき/g,'標準').replace(/\(/g,'（').replace(/\)/g,'）').replace(/:/g,'：').replace(/(\d)\*(\d)/g,'$1×$2').replace(/ +/g,'　').trim();}
 
 function parseLines(rawLines){
- const L=rawLines.map(nz).filter(Boolean);
+ const SPLIT=/(?<=[0-9A-Za-z）)\]】。])(?=(?:床|天井|外壁|内壁|壁|屋根|破風|樋|軒裏|デッキ|土留め|鏡)[：:])/;
+ const L=rawLines.map(nz).filter(Boolean).flatMap(l=>l.split(SPLIT).map(x=>x.trim()).filter(Boolean));
  const out=[];const seen=new Set();
  const add=(item,spec,note='')=>{spec=cleanSpec(spec);const key=item+'|'+spec;if(seen.has(key))return;seen.add(key);out.push({item,spec,note});};
  const info={title:'',date:'',floors:new Set(),nobe:'',kenchiku:''};
@@ -175,13 +176,14 @@ function parseLines(rawLines){
   if(/乾太くん/.test(l)){add('衣類乾燥機',l.replace(/^上部/,'').replace(/デラックス$/,'デラックスタイプ').replace(/乾太くん(\d)/,'乾太くん $1'));continue;}
   if(/タイルデッキ/.test(l)){add('タイルデッキ',l.replace(/^タイルデッキ\s*/,'タイル'));continue;}
   if(/ウッドデッキ/.test(l)){add('ウッドデッキ',l);continue;}
+  if(/^太陽光発電/.test(l)){const nx=L[i+1]&&!isStop(L[i+1])?L[i+1]:'';if(nx)used.add(i+1);add('太陽光発電',[l.replace(/^太陽光発電(システム)?/,''),nx].filter(Boolean).join(' ')||'あり');continue;}
   if(/GW充填|グラスウール充填/i.test(l))gw=true;
   if(/^IH$/i.test(l))ih=true;
   if(/^H2400$/.test(l)&&/PA型|^P[A-Z]型/.test(L[i-1]||''))h2400=true;
  }
  const f=(it)=>out.find(o=>o.item===it);
  if(gw&&f('断熱材'))f('断熱材').spec+='（一部GW充填）';
- if(ih&&f('キッチン'))f('キッチン').spec+='（IH）';
+ if(ih&&f('キッチン')&&!/IH/i.test(f('キッチン').spec))f('キッチン').spec+='（IH）';
  if(h2400&&f('建具')&&/H2000/.test(f('建具').spec))f('建具').spec+='（一部H2400）';
  return {items:out,title:info.title,date:info.date,lineCount:L.length};
 }
